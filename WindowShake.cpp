@@ -7,6 +7,7 @@
 #include "AppExceptions.h"
 #include "SmartHandleClass.h"
 
+#include <strsafe.h>
 #include <queue>
 #include <vector>
 #include <unordered_map>
@@ -111,7 +112,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
       return FALSE;
    }
 
-   SetTimer(hWnd, 100, 250, NULL);
+   SetTimer(hWnd, 100, 1000 / 60, NULL);
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
@@ -130,6 +131,40 @@ struct Move {
     int oy;
 };
 
+class LastPosition {
+    bool known;
+    int x;
+    int y;
+public:
+
+    LastPosition() : x(0), y(0), known(0) {
+    }
+
+    LastPosition(int x, int y) : x(x), y(y), known(1) {
+
+    }
+
+    int GetX() {
+        return x;
+    }
+
+    int GetY() {
+        return y;
+    }
+
+    bool IsUnknown() {
+        return !known;
+    }
+
+    static LastPosition Unknown() {
+        return LastPosition();
+    }
+
+    static LastPosition Known(int x, int y) {
+        return LastPosition(x, y);
+    }
+};
+
 class WindowShakeData {
 private:
     //WindowShakeData& operator=(WindowShakeData& other) = delete;
@@ -139,6 +174,8 @@ private:
     HWND hwnd;
     std::queue<Move> moves;
     uint8_t max_offset;
+    LastPosition last_pos;
+    LastPosition origin;
 
     void FillMoves() {
         std::random_device hw_random;;
@@ -156,21 +193,32 @@ private:
 
         memset(map.get(), 0, map_byte_size);
 
-        int cur_x = max_offset;
-        int cur_y = max_offset;
+        //int cur_x = max_offset;
+        //int cur_y = max_offset;
+
+        int last_pos_x = last_pos.GetX();
+        int last_pos_y = last_pos.GetY();
+
+        int cur_x = (last_pos_x - origin.GetX()) + max_offset;
+        int cur_y = (last_pos_y - origin.GetY()) + max_offset;
 
         map[cur_y * max_move_width + cur_x] = 1;
 
         int failure_count = 0;
 
-        Move short_list[8];
+        const int max_move_inc = 2;
+        const int short_list_size = (max_move_inc * 2 + 1) * (max_move_inc * 2 + 1) - 1;
+        Move short_list[short_list_size];
         uint8_t short_count;
 
-        while (moves.size() < 64) {
+        int off_x = 0;
+        int off_y = 0;
+
+        while (moves.size() < 60 * 5) {
             short_count = 0;
 
-            for (int oy = -1; oy < 2; ++oy) {
-                for (int ox = -1; ox < 2; ++ox) {
+            for (int oy = -max_move_inc; oy < (max_move_inc + 1); ++oy) {
+                for (int ox = -max_move_inc; ox < (max_move_inc + 1); ++ox) {
                     if (ox == 0 && oy == 0) {
                         continue;
                     }
@@ -189,6 +237,9 @@ private:
                     int ondx = this_y * max_move_width + this_x;
 
                     if (map[ondx] == 0) {
+                        if (short_count >= short_list_size) {
+                            throw ProcessFailure("short list overrun");
+                        }
                         short_list[short_count].ox = ox;
                         short_list[short_count].oy = oy;
                         ++short_count;
@@ -209,9 +260,12 @@ private:
             cur_x = new_x;
             cur_y = new_y;
             map[new_ndx] = 1;
+            off_x += move_x;
+            off_y += move_y;
+
             moves.push(Move {
-                .ox = move_x,
-                .oy = move_y,
+                .ox = off_x + last_pos_x,
+                .oy = off_y + last_pos_y,
             });
         }
     }
@@ -223,14 +277,30 @@ public:
     WindowShakeData(HWND hwnd, uint8_t max_offset) : hwnd(hwnd), max_offset(max_offset) {
     }
 
-    void Work() {
+    bool Work() {
+        RECT rect;
+        GetWindowRect(hwnd, &rect);
+
+        if (last_pos.IsUnknown()) {
+            last_pos = LastPosition(rect.left, rect.top);
+            origin = LastPosition(rect.left, rect.top);
+        }
+
+        float lp_delta_x = (float)last_pos.GetX() - (float)rect.left;
+        float lp_delta_y = (float)last_pos.GetY() - (float)rect.top;
+        float lp_delta = std::sqrtf(lp_delta_x * lp_delta_x + lp_delta_y * lp_delta_y);
+
+        if (lp_delta > 128.0f) {
+            last_pos = LastPosition(rect.left, rect.top);
+            origin = LastPosition(rect.left, rect.top);
+            while (moves.size() > 0) {
+                moves.pop();
+            }
+        }
+
         if (moves.size() == 0) {
             FillMoves();
         }
-
-        RECT rect;
-
-        GetWindowRect(hwnd, &rect);
 
         int width = rect.right - rect.left;
         int height = rect.bottom - rect.top;
@@ -238,41 +308,109 @@ public:
         const Move move = moves.front();
         moves.pop();
 
-        const int new_x = move.ox + rect.left;
-        const int new_y = move.oy + rect.top;
+        const int new_x = move.ox; // +rect.left;
+        const int new_y = move.oy; // +rect.top;
 
-        SetWindowPos(
-            hwnd, NULL, new_x, new_y, width, height, 
-            SWP_NOSIZE | SWP_NOSENDCHANGING | SWP_NOREDRAW | SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS
-        );
+        last_pos = LastPosition(new_x, new_y);     
 
-        //MoveWindow(hwnd, new_x, new_y, width, height, FALSE);
+        /*
+        *  I don't think I can wiggle enough to keep it from being predicted
+        *  or easily cracked. I don't think I can get a nice 64x64 wiggle space
+        *  without making things unreadable and such and so forth if this below
+        *  even worked.
+        * 
+        HDC hdc;
+        if ((hdc = GetDC(hwnd)) != NULL) {
+            XFORM xform;
+            memset(&xform, 0, sizeof(xform));
+            xform.eDx = 0;
+            xform.eDy = 0;
+            SetWorldTransform(hdc, &xform);
+        }
+        */
+
+        return SetWindowPos(
+            hwnd, NULL, 
+            new_x, new_y, 
+            width, height, 
+            SWP_NOSIZE | 
+            SWP_NOSENDCHANGING | 
+            SWP_NOREDRAW | 
+            SWP_NOZORDER |
+            SWP_NOOWNERZORDER | 
+            SWP_NOACTIVATE | 
+            SWP_ASYNCWINDOWPOS
+        ) == TRUE;
     }
 };
 
 class ShakerOfWindows {
 private:
     std::unordered_map<HWND, WindowShakeData> shake_data;
+    std::vector<HWND> win_que;
 
-    void HandleWindow(HWND hwnd) {
+    int win_que_ndx;
+
+    bool HandleWindow(HWND hwnd) {
         if (shake_data.count(hwnd) == 0) {
-            shake_data.emplace(hwnd, WindowShakeData(hwnd, 16));
+            shake_data.emplace(hwnd, WindowShakeData(hwnd, 8));
         }
 
-        shake_data.at(hwnd).Work();
+        return shake_data.at(hwnd).Work();
     }
 
 public:
-    ShakerOfWindows() {
+    ShakerOfWindows() : win_que_ndx(0) {
+        for (int x = 0; x < 5; ++x) {
+            win_que.push_back(NULL);
+        }
     }
 
     void ShakeWindows() {
+        /*
         auto win_handles = std::vector<HWND>();
 
         BOOL_THROW(EnumWindows(_ShakeWindows_EnumWindowCb, (LPARAM)&win_handles));
 
         for (auto some_hwnd : win_handles) {
             HandleWindow(some_hwnd);
+        }
+        */
+        HWND cur_hwnd = GetForegroundWindow();
+
+        bool hwnd_exists = false;
+
+        for (int x = 0; x < win_que.size(); ++x) {
+            auto hwnd = win_que.at(x);
+
+            if (hwnd == cur_hwnd) {
+                hwnd_exists = true;
+            }
+
+            if (!HandleWindow(hwnd)) {
+                win_que[x] = NULL;
+            }
+        }
+
+        if (cur_hwnd == GetDesktopWindow()) {
+            return;
+        }
+
+        if (cur_hwnd == GetShellWindow()) {
+            return;
+        }
+
+        if (hwnd_exists == false) {
+            WCHAR title[255];
+            size_t title_size = 0;
+            memset(&title, 0, sizeof(title));
+            GetWindowText(cur_hwnd, &title[0], sizeof(title));
+            StringCchLengthW(&title[0], 255, &title_size);
+            
+            if (title_size > 0) {
+                win_que_ndx = (win_que_ndx + 1) % win_que.size();
+                win_que[win_que_ndx] = cur_hwnd;
+            }
         }
     }
 };
