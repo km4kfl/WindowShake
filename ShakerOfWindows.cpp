@@ -47,7 +47,6 @@ std::optional<std::vector<WCHAR>> ShakerOfWindows::ShakeWindows() {
 
         if (!HandleWindow(hwnd)) {
             win_que[x] = NULL;
-            hwnd_exists = true;
         }
     }
 
