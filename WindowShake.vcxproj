@@ -132,14 +132,18 @@
     <ClInclude Include="AppExceptions.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Resource.h" />
+    <ClInclude Include="ShakerOfWindows.h" />
     <ClInclude Include="SmartHandleClass.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="WindowShake.h" />
+    <ClInclude Include="WindowShakeData.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AppExceptions.cpp" />
+    <ClCompile Include="ShakerOfWindows.cpp" />
     <ClCompile Include="SmartHandleClass.cpp" />
     <ClCompile Include="WindowShake.cpp" />
+    <ClCompile Include="WindowShakeData.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="WindowShake.rc" />

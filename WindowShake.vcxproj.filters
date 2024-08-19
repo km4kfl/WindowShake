@@ -33,6 +33,12 @@
     <ClInclude Include="SmartHandleClass.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ShakerOfWindows.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowShakeData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="WindowShake.cpp">
@@ -42,6 +48,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SmartHandleClass.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WindowShakeData.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ShakerOfWindows.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
